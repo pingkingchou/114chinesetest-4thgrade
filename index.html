@@ -15,11 +15,25 @@
         .incorrect { border-color: #ef4444; }
         .article-box { background-color: #f3f4f6; border-left: 4px solid #3b82f6; padding: 1.5rem; margin-bottom: 1.5rem; border-radius: 0.75rem; }
         .article-box h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem; color: #1e3a8a; }
+        .article-box h4 { font-size: 1.1rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #1d4ed8; }
         .article-box p { text-indent: 2em; margin-bottom: 0.5rem; }
-        #teacher-panel { display: none; } /* 預設隱藏教師後台 */
+        #teacher-panel, #password-modal { display: none; } /* 預設隱藏 */
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
+
+    <!-- Password Modal -->
+    <div id="password-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-sm">
+            <h3 class="text-xl font-bold mb-4">教師登入</h3>
+            <p class="text-sm text-gray-600 mb-4">請輸入密碼以查看作答紀錄。</p>
+            <input type="password" id="password-input" class="w-full p-2 border border-gray-300 rounded-lg mb-4" placeholder="請輸入密碼...">
+            <div class="flex justify-end gap-3">
+                <button id="password-cancel-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">取消</button>
+                <button id="password-submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">確認</button>
+            </div>
+        </div>
+    </div>
 
     <div class="container mx-auto p-4 md:p-8 max-w-4xl">
         <header class="text-center bg-white p-6 rounded-xl shadow-md mb-8">
@@ -29,7 +43,7 @@
 
         <!-- Student Info Section -->
         <div id="student-info" class="bg-white p-6 rounded-xl shadow-md mb-8">
-            <h2 class="text-xl font-bold mb-4 border-b pb-2">考生資訊</h2>
+             <h2 class="text-xl font-bold mb-4 border-b pb-2">考生資訊</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label for="student-class" class="block text-sm font-medium text-gray-700 mb-1">班級</label>
@@ -77,7 +91,12 @@
 
         <!-- Teacher Panel -->
         <div id="teacher-panel" class="mt-8 bg-white p-6 rounded-xl shadow-lg">
-            <h2 class="text-2xl font-bold mb-4">教師後台 - 四年級作答紀錄</h2>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">教師後台 - 四年級作答紀錄</h2>
+                <button id="export-csv-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">
+                    匯出為 Excel (CSV)
+                </button>
+            </div>
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -102,22 +121,21 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 
-        // ====================================================================================
-        // TODO: 請將此處的 firebaseConfig 物件，換成您自己專案的設定碼
-        // ====================================================================================
+        // Your web app's Firebase configuration
         const firebaseConfig = {
-            apiKey: "AIzaSy...YOUR_API_KEY",
-            authDomain: "your-project-id.firebaseapp.com",
-            projectId: "your-project-id",
-            storageBucket: "your-project-id.appspot.com",
-            messagingSenderId: "your-sender-id",
-            appId: "your-app-id"
+            apiKey: "AIzaSyA5yiDVFaIKOJ-UKIqEKpwftxhEQ8SSBmM",
+            authDomain: "th-chinese-1.firebaseapp.com",
+            projectId: "th-chinese-1",
+            storageBucket: "th-chinese-1.appspot.com",
+            messagingSenderId: "740688157010",
+            appId: "1:740688157010:web:ce56f965bbebf3fea5428b",
+            measurementId: "G-HWCCCX2XF2"
         };
-        // ====================================================================================
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // --- All DOM elements ---
         const quizContainer = document.getElementById('quiz-container');
         const form = document.getElementById('quiz-form');
         const resultsContainer = document.getElementById('results');
@@ -131,6 +149,12 @@
         const teacherPanel = document.getElementById('teacher-panel');
         const resultsTableBody = document.getElementById('results-table-body');
         const submitBtn = document.getElementById('submit-btn');
+        const exportCsvBtn = document.getElementById('export-csv-btn');
+        const passwordModal = document.getElementById('password-modal');
+        const passwordInput = document.getElementById('password-input');
+        const passwordSubmitBtn = document.getElementById('password-submit-btn');
+        const passwordCancelBtn = document.getElementById('password-cancel-btn');
+
 
         const quizData = [
             { type: 'header', content: '一、語文知識題' },
@@ -149,22 +173,22 @@
             { question: '13. 媽媽:今天放學後,我要留在學校練習合唱比賽的曲目,大約晚上六點會回到家。兒子東東敬上 12月20日 上面的文本,屬於下列哪一種文體?', options: ['抒情文', '說明文', '應用文', '記敘文'], answer: 3 },
             { type: 'header', content: '二、閱讀理解題' },
             { question: '14. 下列哪一個選項,前後「」內的字意思相同?', options: ['忍痛割「捨」/接受施「捨」', '開路先「鋒」/部隊前「鋒」', '心「酸」故事/「酸」甜苦辣', '記「載」事實/「載」貨回家'], answer: 2 },
-            { question: '15. 我把硬幣投進許願池裡,希望心願可以真的實現。上面句子中的「投」,與下列哪一個選項中的「投」意思最接近?', options: ['自「投」羅網', '失敗「投」降', '「投」稿校刊', '「投」球姿勢'], answer: 4 },
+            { question: '15. 我把硬幣投進许願池裡,希望心願可以真的實現。上面句子中的「投」,與下列哪一個選項中的「投」意思最接近?', options: ['自「投」羅網', '失敗「投」降', '「投」稿校刊', '「投」球姿勢'], answer: 4 },
             { question: '16. 下列哪一個選項,前後詞語的關係和其他選項不同?', options: ['勤奮/懶惰', '快樂/哀傷', '大方/自私', '辛勞/辛苦'], answer: 4 },
             { question: '17. 下列選項中的「壓力」,哪一個的意思與另外三個不同?', options: ['最近的工作「壓力」讓他焦慮不安,因而影響到睡眠品質。', '潛水員在水底受到強大「壓力」,因此移動時會更加困難。', '雖然大學畢業後就有就業「壓力」,但表哥還是樂觀面對。', '適當的學習「壓力」能促使人們進步,進而挑戰自我極限。'], answer: 2 },
             { question: '18. 騎樓下躲雨的人不少,但是大家看到雨不停的下,有的人穿上雨衣,有的人拿出雨傘,一個一個走了,很快就只剩下我一個人。上面的句子主要想告訴我們什麼事?', options: ['在騎樓下躲雨的人很少。', '這場雨只有下了一陣子。', '這段期間騎樓下都有人。', '帶雨具的人紛紛的走了。'], answer: 4 },
-            { question: '19. 我一直懷疑姊姊有特異功能,很可能是外星人送來地球的密探...下列哪一個選項最能代表本段文字的大意?', options: ['媽媽比較喜歡姊姊。', '作者覺得姊姊很奇特。', '作者的姊姊是個外星人。', '作者的姊姊是外星人的密探。'], answer: 2 },
+            { question: '19. 我一直懷疑姊姊有特異功能,很可能是外星人送來地球的密探;外星人把她寄放在媽媽的肚子裡,讓她誕生在我家成了我姊姊。媽媽說姊姊從小就不愛哭,乖乖的吃飽睡、睡飽吃,可見她有多奇特;而每次當媽媽拿我跟姊姊比較後,也讓我更加懷疑我們是不是親生姊妹。下列哪一個選項最能代表本段文字的大意?', options: ['媽媽比較喜歡姊姊。', '作者覺得姊姊很奇特。', '作者的姊姊是個外星人。', '作者的姊姊是外星人的密探。'], answer: 2 },
             { question: '20. 天分高的人如果太懶惰,而不努力發揮他的才能,也難有什麼大成就,反而不如那些天分低卻努力的人。下列哪一個選項的敘述最能代表這句話的意思?', options: ['只要天分足夠,早晚都會成功。', '沒有失敗經驗的人,不會成功。', '擁有天賦的人也需要勤奮努力。', '所有事情都需要付出才有收穫。'], answer: 3 },
-            { question: '21. 早年,臺灣是個農業社會...「打鑼的」成為地方上的報馬仔...下列哪一個選項最能代表本段文字的涵義?', options: ['臺灣早期的傳播科技落後世界各國。', '農業社會導致一般人知識水準不高。', '打鑼的人在當時負責傳遞重要消息。', '電視的發明可以讓訊息傳遞更便利。'], answer: 3 },
-            { type: 'article', title: '我懂你', content: '<p>開學第二天,班上轉來了一位新同學 婷如。婷如披散著一頭略顯雜亂的黑長髮,穿著有些破舊又有點髒污的運動服...</p><p>...於是,我鼓起勇氣,走向婷如,坐在她的旁邊,輕聲對她說:「嗨,婷如,我是小玲,你要和我們一起玩紅綠燈嗎?」...</p><p>從那天開始,我每天都會主動找她聊幾句...她真正成為了班上的一分子。看著婷如的笑容,我心裡也感到一種說不出的滿足。</p>'},
+            { question: '21. 早年,臺灣是個農業社會。那時是個沒有電視,收音機又不普遍的時代,書報雜誌也不多;教育更不普遍,一般人知識水準也都不高。那個時代,要傳播一個消息,無法透過傳播媒體,只能靠人工沿街喊叫宣告,因此「打鑼的」成為地方上的報馬仔。鏘鏘鏘,街上只要聽到鑼聲響起,就是打鑼的有事要宣布了。下列哪一個選項最能代表本段文字的涵義?', options: ['臺灣早期的傳播科技落後世界各國。', '農業社會導致一般人知識水準不高。', '打鑼的人在當時負責傳遞重要消息。', '電視的發明可以讓訊息傳遞更便利。'], answer: 3 },
+            { type: 'article', title: '我懂你', content: '<p>開學第二天,班上轉來了一位新同學 婷如。婷如披散著一頭略顯雜亂的黑長髮,穿著有些破舊又有點髒污的運動服。在老師的介紹下,害羞的站起來小聲與大家打招呼。她顯得有些不知所措,只說了自己的名字就呆站在原地,老師只好請她先坐下。</p><p>婷如剛來新學校,對一切都感到很陌生,也不太知道該說什麼、做什麼,總是一個人靜靜的坐在角落裡。同學們對婷如感到很好奇,所以聚在一起時難免會小聲的猜測與討論婷如是從哪裡來的?有的說婷如是從山上的小學轉來的,因為她身上運動服繡的字;有的說婷如跟奶奶住,因為有看過一個年紀很大的女人來接她放學。</p><p>這些試探的眼神與小聲的議論,讓婷如感到很不自在。有些同學的表情動作,更讓婷如猜想他們是不是在取笑她。這讓婷如感到不太舒服,但她不知道該怎麼處理,也不知道該對誰說,就變得更加沉默了………</p><p>一天午休,我看到婷如呆坐在角落,孤單的低著頭,似乎不太想與大家互動。看她那樣,我不禁想起自己剛上學時的情景。那時,我也曾因為不認識新環境而感到不安,心裡很害怕沒有人會和我說話。多虧了我現在的好朋友 詩涵,那時她主動來找我聊天,大方開朗的態度讓我覺得溫暖又安心。在彼此的陪伴下,我很快的就適應了新環境。</p><p>於是,我鼓起勇氣,走向婷如,坐在她的旁邊,輕聲對她說:「嗨,婷如,我是小玲,你要和我們一起玩紅綠燈嗎?」婷如抬起頭,眼神有些驚訝,但看到我微笑的臉,她的嘴角也露出了些微笑容。「好啊 」婷如輕輕回答,語氣中透著一絲小心,但也有點期待。</p><p>從那天開始,我每天都會主動找她聊幾句,告訴她一些班上的趣事,還介紹了幾個同學給她認識。隨著時間的推移,婷如的笑容多了,也會主動來找我們聊天、玩遊戲,她真正成為了班上的一分子。看著婷如的笑容,我心裡也感到一種說不出的滿足。</p>'},
             { question: '22. 依據文章內容,婷如剛轉學來的時候,為什麼會感到不安?', options: ['說話太小聲大家都沒聽到。', '對新學校的環境感到陌生。', '不喜歡別人一直盯著她看。', '小玲還沒有主動跟她說話。'], answer: 2 },
             { question: '23. 依據文章內容,作者為什麼要將標題訂做「我懂你」?', options: ['回想起與婷如相似的處境。', '在觀察中知道婷如的背景。', '感謝詩涵伸出友誼的雙手。', '自己也喜歡坐在角落沉思。'], answer: 1 },
             { question: '24. 依據文章內容,本文要傳達的主旨是什麼?', options: ['我們不應該讓新同學孤單。', '到新環境要主動接觸同學。', '關懷與行動能帶給人溫暖。', '人面對新環境都會很不安。'], answer: 3 },
-            { type: 'article', title: '歡迎,請上船', content: '<p>搬家那天,小威把從小到大的玩具收成好大一箱...但黃色小鴨鴨卻滾下來,滾進水溝裡。</p><p>...小鴨鴨被水流慢慢的帶走...他流進那片光,接著穿出了水溝,啊 流進了一條小河。</p><p>...一片特別低的荷葉上,站了六隻小螞蟻...「現在我們只想搭船。」黑螞蟻說...</p><p>...綠色的荷葉在風裡搖曳,幾隻小蜜蜂提著花蜜:「小鴨鴨,我們也想搭船,行不行?」 小鴨鴨驕傲的說:「歡迎,請上船。」</p>'},
+            { type: 'article', title: '歡迎,請上船', content: '<p>搬家那天,小威把從小到大的玩具收成好大一箱。抬上車,一隻黃色小鴨鴨從紙箱裡鑽出頭來。這是小鴨鴨第一次離開家,他睜著圓圓的大眼睛東看西看。</p><p>小威回頭看看家,依依不捨的上車了。小貨車噗噗噗的往前,突然一隻小狗從車子前面衝過。小威爸爸急忙踩煞車,嘰———小狗沒事,小威和爸爸也沒事;但黃色小鴨鴨卻滾下來,滾進水溝裡。</p><p>黑漆漆的水溝裡,什麼都看不清楚,只有爛爛的泥巴和臭臭的味道。</p><p>「我在這裡呢!」小鴨鴨大叫,「小威!小威!我在這裡!」</p><p>小威沒聽到,小貨車沒停下來,噗噗噗的走了,越走越遠。</p><p>這下該怎麼辦呀?</p><p>一隻小老鼠咬他的尾巴:「你這隻烤鴨不好吃。」</p><p>「我不是烤鴨。」小鴨鴨說。</p><p>「所以沒有用處。」小老鼠把他踢進水裡。「我得去找食物,沒空理你。」小老鼠連再見也沒說就走了。</p><p>小鴨鴨眼角含著淚水:「我有用處,我真的有用。」</p><p>小鴨鴨被水流慢慢的帶走。前進呀前進,不知道過了多久,前方出現一點亮光,由小而大,從暗到亮。他流進那片光,接著穿出了水溝,啊 流進了一條小河。</p><p>天空變寬了,河邊開滿小花。哇!連空氣也變好了。</p><p>小鴨鴨看到一隻大青蛙從水裡抬起頭,看起來凶凶的。</p><p>「你不是真鴨子。」大青蛙驕傲的問:「你會潛水嗎?」</p><p>小鴨鴨回說:「不會。但是你如果按按我,我會呱呱呱。」</p><p>大青蛙按了他一下,小鴨鴨卻發不出聲音。</p><p>「壞掉了,難怪沒人要。」大青蛙露出輕視的表情。</p><p>「我是自己掉下來的,不是沒人要的,我的主人叫…………………」小鴨鴨還在解釋,大青蛙卻跳走了。</p><p>一片特別低的荷葉上,站了六隻小螞蟻。</p><p>「喂,鴨子。」一隻扛著米粒的黑螞蟻在叫喚。他們的頭上都是汗水。</p><p>小鴨鴨說:「什麼事?我不能吃,也不會潛水呵!」</p><p>「現在我們只想搭船。」黑螞蟻說:「我們已經從早上走到現在了。」</p><p>「歡迎呀!」小鴨鴨說:「歡迎你們跟我做伴。」</p><p>陽光很強,風很涼,風裡還有荷花的味道,幾隻小魚游在水底下,他們也想邀小鴨鴨比游泳:「看誰先游出這片荷花田。」</p><p>小鴨鴨搖搖頭:「我得送小螞蟻回家。」</p><p>綠色的荷葉在風裡搖曳,幾隻小蜜蜂提著花蜜:「小鴨鴨,我們也想搭船,行不行?」</p><p>小鴨鴨驕傲的說:「歡迎,請上船。」</p><p>這艘小船,歡迎大家搭乘,順著藍色的水流,小鴨鴨會載著大家,向前再向前。</p>'},
             { question: '25. 小鴨鴨出現在水溝裡的原因是什麼?', options: ['因為汽車急煞而掉出紙箱。', '為了要跟大青蛙比賽潛水。', '跟小螞蟻約好載他們回家。', '想證明自己有獨特的能力。'], answer: 1 },
             { question: '26. 下列哪一個選項符合小鴨鴨的心境歷程的轉變?', options: ['害羞 害怕→慌張→好奇', '害羞→慌張→害怕→好奇', '好奇→難過→慌張→自信', '好奇→慌張→難過→自信'], answer: 4 },
             { question: '27. 這個故事主要想告訴我們什麼想法?', options: ['每個人都有屬於自己的獨特優點。', '在人生的道路上必須要找到伙伴。', '任何人都必須要培養自己的專長。', '所有人都不應該取笑別人的短處。'], answer: 1 },
-            { type: 'article', title: '海馬的介紹', content: '![海馬的構造圖](https://i.imgur.com/example.png)<p>在廣闊的大海中...有一種魚長得不像魚...牠就是可愛的海馬。</p><p>...海馬的體色會隨著環境改變...牠披著堅硬的骨板,有靈活的尾巴,有分開轉動的眼珠,更有如同變色龍般的變色能力...</p><p>海馬是全世界游得最慢的魚...牠的長尾巴卻很靈活...更會利用尾巴纏住珊瑚或海草,穩固自己不被海流沖走...</p><p>海馬沒有牙齒...靠著長嘴巴吸食浮游生物和小型甲殼類生物...</p>'},
+            { type: 'article', title: '海馬的奧祕', content: '<img src="https://i.imgur.com/dZ1k17A.png" alt="海馬的構造圖" class="mx-auto my-4 rounded-lg shadow-md"><p>在廣闊的大海中,有好多美麗的魚兒優游,但有一種魚長得不像魚,身體直立於海中,還有長長的嘴跟尾巴,睜著圓圓的眼睛隨著海流晃啊晃。沒錯!牠就是可愛的海馬。</p><p>海馬是海龍科的魚類,生活在溫暖、有海草或珊瑚生長的淺水海域。牠沒有尾鰭,只有長長的尾巴。</p><p>海馬雖然是魚,但行動方式卻跟一般魚類不同,魚兒擺動尾鰭游泳,海馬卻是挺直著身體游泳。由於沒有靈活的尾鰭,所以靠著胸鰭保持平衡,擺動背鰭前進。</p><p>看起來呆呆的海馬,其實擁有一身好本領。牠披著堅硬的骨板,有靈活的尾巴,有分開轉動的眼珠,更有如同變色龍般的變色能力,讓牠們在危機四伏的大海中,能夠確保自己的安全。</p><h4>跟著環境變顏色</h4><p>海馬的體色會隨著環境改變,以用來躲避天敵和獵捕獵物。因為海馬的皮膚上有許多色素細胞,透過這些細胞的膨脹和收縮來改變體色。世界上最小的海馬 豆丁海馬,就是利用這種變色能力,讓自己完美的隱藏或埋伏在珊瑚礁中。</p><h4>長尾巴穩住身體</h4><p>海馬是全世界游得最慢的魚,畢竟牠只能靠著一小片的背鰭來推動前進。不過,海馬的長尾巴却很靈活,牠精彩的求偶舞就是靠尾巴來舞動的。除了游動期間,牠們在休息或是獵食的時候,更會利用尾巴纏住珊瑚或海草,穩固自己不被海流沖走,讓自己更安全。</p><h4>長嘴巴吸食東西</h4><p>海馬沒有牙齒,牠們的嘴巴很小,但吸力很強,可以將獵物吸入嘴中。靠著長嘴巴吸食浮游生物和小型甲殼類生物,然後直接進入腸道消化。由於海馬沒有胃,消化功能比較不好,所以一天要吃上好多餐,才足以維持生命。</p><h4>分開轉動的眼珠</h4><p>海馬的眼睛也跟變色龍一樣,兩邊的眼珠可各自獨立轉動,以便在覓食的同時,能注意周遭環境是否安全。</p>'},
             { question: '28. 依據文章內容,下列哪一個選項是正確的?', options: ['海馬有長長的嘴和長長的尾巴。', '海馬靠著尾鰭擺動來游泳前進。', '海馬只有在獵捕獵物時,才會變化體色。', '海馬消化功能很好,所以一天吃很多餐。'], answer: 1 },
             { question: '29. 文章中提到海馬擁有一身好本領,下列哪一項本領無法幫助海馬避開危險?', options: ['色素細胞能變色', '長嘴巴的強吸力', '眼珠能分開轉動', '可捲曲的長尾巴'], answer: 2 },
             { question: '30. 我們如果要幫這篇文章訂題目,下列哪一個選項最合適?', options: ['海馬的運動習性', '海馬的生存方式', '海馬的生活環境', '海馬的飲食習慣'], answer: 2 },
@@ -178,6 +202,7 @@
         function generateReportPage() { /* ... implementation ... */ }
         function retryQuiz() { /* ... implementation ... */ }
         async function showTeacherPanel() { /* ... implementation ... */ }
+        async function exportToCsv() { /* ... implementation ... */ }
 
         // --- Implementation of functions ---
         
@@ -360,61 +385,157 @@
         };
 
         showTeacherPanel = async function() {
-            // TODO: 請在此處修改您的教師後台登入密碼
-            const password = "teacher123";
-            const input = prompt("請輸入教師密碼：");
-
-            if (input === password) {
-                teacherPanel.style.display = 'block';
-                teacherPanel.scrollIntoView({ behavior: 'smooth' });
+            // This function is now just for fetching and displaying data
+            teacherPanel.style.display = 'block';
+            teacherPanel.scrollIntoView({ behavior: 'smooth' });
+            
+            resultsTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4">正在載入紀錄...</td></tr>';
+            
+            try {
+                const querySnapshot = await getDocs(collection(db, "results_grade_4"));
+                resultsTableBody.innerHTML = '';
                 
-                resultsTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4">正在載入紀錄...</td></tr>';
-                
-                try {
-                    // Fetch from the Grade 4 collection
-                    const querySnapshot = await getDocs(collection(db, "results_grade_4"));
-                    resultsTableBody.innerHTML = '';
-                    
-                    if (querySnapshot.empty) {
-                        resultsTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4">目前沒有任何作答紀錄。</td></tr>';
-                        return;
-                    }
-
-                    const records = [];
-                    querySnapshot.forEach((doc) => {
-                        records.push(doc.data());
-                    });
-                    
-                    records.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
-
-                    records.forEach(data => {
-                        const date = data.timestamp.toDate();
-                        const formattedDate = `${date.getFullYear()}/${(date.getMonth()+1).toString().padStart(2,'0')}/${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
-                        
-                        const row = `<tr>
-                            <td class="px-6 py-4 whitespace-nowrap">${formattedDate}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">${data.studentClass}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">${data.studentName}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">${data.score}</td>
-                        </tr>`;
-                        resultsTableBody.innerHTML += row;
-                    });
-
-                } catch (error) {
-                    console.error("Error getting documents: ", error);
-                    resultsTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-red-500">讀取紀錄失敗，請檢查 Firebase 設定與網路連線。</td></tr>';
+                if (querySnapshot.empty) {
+                    resultsTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4">目前沒有任何作答紀錄。</td></tr>';
+                    return;
                 }
 
-            } else if (input !== null) {
-                alert("密碼錯誤！");
+                const records = [];
+                querySnapshot.forEach((doc) => {
+                    records.push(doc.data());
+                });
+                
+                records.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+
+                records.forEach(data => {
+                    const date = data.timestamp.toDate();
+                    const formattedDate = `${date.getFullYear()}/${(date.getMonth()+1).toString().padStart(2,'0')}/${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
+                    
+                    const row = `<tr>
+                        <td class="px-6 py-4 whitespace-nowrap">${formattedDate}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${data.studentClass}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${data.studentName}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${data.score}</td>
+                    </tr>`;
+                    resultsTableBody.innerHTML += row;
+                });
+
+            } catch (error) {
+                console.error("Error getting documents: ", error);
+                resultsTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-red-500">讀取紀錄失敗，請檢查 Firebase 設定與網路連線。</td></tr>';
             }
         };
+        
+        // --- NEW LOGIC FOR PASSWORD MODAL ---
+        const handleLogin = function() {
+            // TODO: 請在此處修改您的教師後台登入密碼
+            const correctPassword = "pingking1@";
+            const enteredPassword = passwordInput.value;
+
+            if (enteredPassword === correctPassword) {
+                passwordModal.style.display = 'none'; // Hide modal
+                passwordInput.value = ''; // Clear input
+                showTeacherPanel(); // Proceed to show data
+            } else {
+                alert("密碼錯誤！");
+                passwordInput.value = '';
+            }
+        };
+
+        teacherLoginBtn.addEventListener('click', () => {
+            passwordModal.style.display = 'flex';
+            passwordInput.focus();
+        });
+
+        passwordCancelBtn.addEventListener('click', () => {
+            passwordModal.style.display = 'none';
+            passwordInput.value = '';
+        });
+
+        passwordSubmitBtn.addEventListener('click', handleLogin);
+        
+        // Allow submitting with Enter key
+        passwordInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                handleLogin();
+            }
+        });
+
+
+        exportToCsv = async function() {
+            try {
+                // 1. Fetch all data from Firestore
+                const querySnapshot = await getDocs(collection(db, "results_grade_4"));
+                if (querySnapshot.empty) {
+                    alert("目前沒有任何作答紀錄可匯出。");
+                    return;
+                }
+
+                const records = [];
+                querySnapshot.forEach((doc) => {
+                    records.push(doc.data());
+                });
+                
+                // Sort by timestamp, newest first
+                records.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+
+                // 2. Prepare CSV content
+                let csvContent = "";
+
+                // Create header row
+                const headers = ["作答時間", "班級", "姓名", "分數", "答對題數"];
+                const totalQuestions = questionElements.length;
+                for (let i = 1; i <= totalQuestions; i++) {
+                    headers.push(`第${i}題答案`);
+                }
+                csvContent += headers.join(',') + '\r\n';
+
+                // Create data rows
+                records.forEach(record => {
+                    const date = record.timestamp.toDate();
+                    const formattedDate = `${date.getFullYear()}/${(date.getMonth()+1).toString().padStart(2,'0')}/${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
+                    
+                    let row = [
+                        `"${formattedDate}"`, // Enclose in quotes to handle potential commas
+                        `"${record.studentClass}"`,
+                        `"${record.studentName}"`,
+                        record.score,
+                        record.correctCount
+                    ];
+
+                    for (let i = 1; i <= totalQuestions; i++) {
+                        row.push(record.answers[i] || "未作答");
+                    }
+                    csvContent += row.join(',') + '\r\n';
+                });
+
+                // 3. Trigger download
+                // Prepend BOM for Excel to recognize UTF-8
+                const bom = new Uint8Array([0xEF, 0xBB, 0xBF]); 
+                const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                if (link.download !== undefined) { 
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", "四年級國語文作答紀錄.csv");
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+
+            } catch (error) {
+                console.error("無法匯出CSV: ", error);
+                alert("匯出紀錄失敗，請檢查Firebase設定與網路連線。");
+            }
+        };
+
 
         document.addEventListener('DOMContentLoaded', buildQuiz);
         form.addEventListener('submit', submitQuiz);
         downloadBtn.addEventListener('click', generateReportPage);
         retryBtn.addEventListener('click', retryQuiz);
-        teacherLoginBtn.addEventListener('click', showTeacherPanel);
+        exportCsvBtn.addEventListener('click', exportToCsv);
 
     </script>
 </body>
